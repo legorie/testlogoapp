@@ -21,6 +21,8 @@
     "mongodb": "*",
     "mongoose": "*",
     "passport": "*",
+    "passport-facebook": "^2.0.0",
+    "passport-google-oauth2": "^0.1.6",
     "passport-http": "*",
     "passport-local": "*"
   }

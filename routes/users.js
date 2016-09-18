@@ -1,7 +1,11 @@
 var express = require('express');
 var router = express.Router();
+var expressValidator = require('express-validator');
 var passport = require('passport');
 var LocalStrategy = require('passport-local').Strategy;
+var config = require('../oauth.js');
+var GoogleStrategy = require('passport-google-oauth2').Strategy;
+var FacebookStrategy = require('passport-facebook').Strategy;
 
 var User = require('../models/user');
 
@@ -14,6 +18,27 @@ router.get('/register', function(req, res){
 router.get('/login', function(req, res){
 	res.render('login');
 });
+
+router.get('/auth/google',
+  passport.authenticate('google', { scope: [
+    'https://www.googleapis.com/auth/plus.login',
+    'https://www.googleapis.com/auth/plus.profile.emails.read'
+  ] }
+));
+router.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/' }),
+  function(req, res) {
+    res.redirect('/');
+  });
+
+router.get('/auth/facebook', passport.authenticate('facebook', { scope : 'email' }));
+
+router.get('/auth/facebook/callback',
+  passport.authenticate('facebook', { failureRedirect: '/'}),
+  function(req, res) {
+    res.redirect('/');
+  });
+
 
 // Register User
 router.post('/register', function(req, res){
@@ -31,7 +56,9 @@ router.post('/register', function(req, res){
 	req.checkBody('password', 'Password is required').notEmpty();
 	req.checkBody('password2', 'Passwords do not match').equals(req.body.password);
 
+
 	var errors = req.validationErrors();
+	console.log(errors);
 
 	if(errors){
 		res.render('register',{
@@ -42,7 +69,9 @@ router.post('/register', function(req, res){
 			name: name,
 			email:email,
 			username: username,
-			password: password
+			password: password,
+			src: 'tt',
+			created: Date.now()
 		});
 
 		User.createUser(newUser, function(err, user){
@@ -75,13 +104,99 @@ passport.use(new LocalStrategy(
    });
   }));
 
+//facebook
+passport.use(new FacebookStrategy({
+  clientID: config.facebook.clientID,
+  clientSecret: config.facebook.clientSecret,
+  callbackURL: config.facebook.callbackURL,
+ 	profileFields: ['emails','displayName']
+  },
+  function(accessToken, refreshToken, profile, done) {
+    User.findOne({ oauthID: profile.id }, function(err, user) {
+      if(err) {
+        console.log(err);  // handle errors!
+      }
+      if (!err && user !== null) {
+        done(null, user);
+      } else {
+				if (profile.emails) {
+					console.log(profile.emails);
+					email_val = profile.emails[0].value;
+				} else {
+					console.log("Email field is empty; user not authorising");
+					email_val = null;
+				}
+        user = new User({
+          oauthID: profile.id,
+          name: profile.displayName,
+					// email: profile.email,
+					email: email_val,
+					src: 'fb',
+          created: Date.now()
+        });
+        user.save(function(err) {
+          if(err) {
+            console.log(err);  // handle errors!
+          } else {
+            console.log("saving user ...");
+            done(null, user);
+          }
+        });
+      }
+    });
+  }
+));
+
+
+// Google
+passport.use(new GoogleStrategy({
+  clientID: config.google.clientID,
+  clientSecret: config.google.clientSecret,
+  callbackURL: config.google.callbackURL,
+  passReqToCallback: true
+  },
+	function(request, accessToken, refreshToken, profile, done) {
+		User.findOne({ oauthID: profile.id }, function(err, user) {
+			if(err) {
+				console.log(err);  // handle errors!
+			}
+			if (!err && user !== null) {
+				done(null, user);
+			} else {
+				user = new User({
+					oauthID: profile.id,
+					name: profile.displayName,
+					email: profile.email,
+					src: 'goog',
+					created: Date.now()
+					//todo: hope to idenfiy the Oauth provider with the oauthID
+				});
+				user.save(function(err) {
+					if(err) {
+						console.log(err);  // handle errors!
+					} else {
+						console.log("saving user ...");
+						done(null, user);
+					}
+				});
+			}
+		});
+	}
+));
+
+
 passport.serializeUser(function(user, done) {
+	console.log("serialize");
+	console.log(user);
   done(null, user.id);
 });
 
 passport.deserializeUser(function(id, done) {
+	console.log("deserialize");
+	console.log(id);
   User.getUserById(id, function(err, user) {
-    done(err, user);
+		if(!err) done(null, user);
+		else done(err, null);
   });
 });
 
