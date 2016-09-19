@@ -8,9 +8,22 @@ var UserSchema = mongoose.Schema({
 	email: {		type: String	},
 	name: {		type: String	},
   oauthID: {		type: Number	},
-	src: {		type: String	},
+	photoURL: {type: String},
+	src: {type: String	},
   created: {		type: Date	}
 });
+
+// UserSchema.pre('save', function (next) {
+//     var self = this;
+//     User.find({name : self.username}, function (err, docs) {
+//         if (!docs.length){
+//             next();
+//         }else{
+//             console.log('user exists: ',self.username);
+//             next(new Error("User exists!"));
+//         }
+//     });
+// }) ;
 
 var User = module.exports = mongoose.model('User', UserSchema);
 

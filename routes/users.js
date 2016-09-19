@@ -6,6 +6,7 @@ var LocalStrategy = require('passport-local').Strategy;
 var config = require('../oauth.js');
 var GoogleStrategy = require('passport-google-oauth2').Strategy;
 var FacebookStrategy = require('passport-facebook').Strategy;
+var TwitterStrategy = require('passport-twitter').Strategy;
 
 var User = require('../models/user');
 
@@ -20,24 +21,32 @@ router.get('/login', function(req, res){
 });
 
 router.get('/auth/google',
-  passport.authenticate('google', { scope: [
-    'https://www.googleapis.com/auth/plus.login',
-    'https://www.googleapis.com/auth/plus.profile.emails.read'
-  ] }
+passport.authenticate('google', { scope: [
+	'https://www.googleapis.com/auth/plus.login',
+	'https://www.googleapis.com/auth/plus.profile.emails.read'
+] }
 ));
 router.get('/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/' }),
-  function(req, res) {
-    res.redirect('/');
-  });
+passport.authenticate('google', { failureRedirect: '/' }),
+function(req, res) {
+	res.redirect('/');
+});
 
 router.get('/auth/facebook', passport.authenticate('facebook', { scope : 'email' }));
 
 router.get('/auth/facebook/callback',
-  passport.authenticate('facebook', { failureRedirect: '/'}),
-  function(req, res) {
-    res.redirect('/');
-  });
+passport.authenticate('facebook', { failureRedirect: '/'}),
+function(req, res) {
+	res.redirect('/');
+});
+
+router.get('/auth/twitter', passport.authenticate('twitter'), function(req, res){});
+
+router.get('/auth/twitter/callback',
+passport.authenticate('twitter', { failureRedirect: '/'}),
+function(req, res) {
+	res.redirect('/');
+});
 
 
 // Register User
@@ -56,120 +65,92 @@ router.post('/register', function(req, res){
 	req.checkBody('password', 'Password is required').notEmpty();
 	req.checkBody('password2', 'Passwords do not match').equals(req.body.password);
 
+var errors = req.validationErrors();
 
-	var errors = req.validationErrors();
-	console.log(errors);
+if(errors){
+	res.render('register',{
+		errors:errors
+	});
+} else {
+	User.getUserByUsername(username, function(err, user){
+		if(err) throw err;
+		if(user){
+			res.render('register',{
+				errors:[{msg:'Username already used',param:'username'}]
+			});
+		}
+		else {
 
-	if(errors){
-		res.render('register',{
-			errors:errors
-		});
-	} else {
-		var newUser = new User({
-			name: name,
-			email:email,
-			username: username,
-			password: password,
-			src: 'tt',
-			created: Date.now()
-		});
+			var newUser = new User({
+				name: name,
+				email:email,
+				username: username,
+				password: password,
+				src: 'tt',
+				created: Date.now()
+			});
 
-		User.createUser(newUser, function(err, user){
-			if(err) throw err;
-			console.log(user);
-		});
+			User.createUser(newUser, function(err, user){
+				if(err) throw err;
+				console.log(user);
+			});
 
-		req.flash('success_msg', 'You are registered and can now login');
+			req.flash('success_msg', 'You are registered and can now login');
 
-		res.redirect('/users/login');
-	}
+			res.redirect('/users/login');
+		}
+	})
+}
 });
 
 passport.use(new LocalStrategy(
-  function(username, password, done) {
-   User.getUserByUsername(username, function(err, user){
-   	if(err) throw err;
-   	if(!user){
-   		return done(null, false, {message: 'Unknown User'});
-   	}
+	function(username, password, done) {
+		User.getUserByUsername(username, function(err, user){
+			if(err) throw err;
+			if(!user){
+				return done(null, false, {message: 'Unknown User'});
+			}
 
-   	User.comparePassword(password, user.password, function(err, isMatch){
-   		if(err) throw err;
-   		if(isMatch){
-   			return done(null, user);
-   		} else {
-   			return done(null, false, {message: 'Invalid password'});
-   		}
-   	});
-   });
-  }));
-
-//facebook
-passport.use(new FacebookStrategy({
-  clientID: config.facebook.clientID,
-  clientSecret: config.facebook.clientSecret,
-  callbackURL: config.facebook.callbackURL,
- 	profileFields: ['emails','displayName']
-  },
-  function(accessToken, refreshToken, profile, done) {
-    User.findOne({ oauthID: profile.id }, function(err, user) {
-      if(err) {
-        console.log(err);  // handle errors!
-      }
-      if (!err && user !== null) {
-        done(null, user);
-      } else {
-				if (profile.emails) {
-					console.log(profile.emails);
-					email_val = profile.emails[0].value;
+			User.comparePassword(password, user.password, function(err, isMatch){
+				if(err) throw err;
+				if(isMatch){
+					return done(null, user);
 				} else {
-					console.log("Email field is empty; user not authorising");
-					email_val = null;
+					return done(null, false, {message: 'Invalid password'});
 				}
-        user = new User({
-          oauthID: profile.id,
-          name: profile.displayName,
-					// email: profile.email,
-					email: email_val,
-					src: 'fb',
-          created: Date.now()
-        });
-        user.save(function(err) {
-          if(err) {
-            console.log(err);  // handle errors!
-          } else {
-            console.log("saving user ...");
-            done(null, user);
-          }
-        });
-      }
-    });
-  }
-));
+			});
+		});
+	}));
 
-
-// Google
-passport.use(new GoogleStrategy({
-  clientID: config.google.clientID,
-  clientSecret: config.google.clientSecret,
-  callbackURL: config.google.callbackURL,
-  passReqToCallback: true
-  },
-	function(request, accessToken, refreshToken, profile, done) {
+	//facebook
+	passport.use(new FacebookStrategy({
+		clientID: config.facebook.clientID,
+		clientSecret: config.facebook.clientSecret,
+		callbackURL: config.facebook.callbackURL,
+		profileFields: ['emails','displayName','photos']
+	},
+	function(accessToken, refreshToken, profile, done) {
 		User.findOne({ oauthID: profile.id }, function(err, user) {
 			if(err) {
 				console.log(err);  // handle errors!
 			}
 			if (!err && user !== null) {
 				done(null, user);
-			} else {
+			} else {²
+				if (profile.emails) {
+					email_val = profile.emails[0].value;
+				} else {
+					console.log("Email field is empty @FB; user not authorising");
+					email_val = null;
+				}
 				user = new User({
 					oauthID: profile.id,
 					name: profile.displayName,
-					email: profile.email,
-					src: 'goog',
+					// email: profile.email,
+					email: email_val,
+					src: 'fb',
+					photoURL: profile.photos[0].value,
 					created: Date.now()
-					//todo: hope to idenfiy the Oauth provider with the oauthID
 				});
 				user.save(function(err) {
 					if(err) {
@@ -184,27 +165,103 @@ passport.use(new GoogleStrategy({
 	}
 ));
 
+// Twitter
+passport.use(new TwitterStrategy({
+	consumerKey: config.twitter.consumerKey,
+	consumerSecret: config.twitter.consumerSecret,
+	callbackURL: config.twitter.callbackURL,
+	includeEmail: true
+},
+function(accessToken, refreshToken, profile, done) {
+	User.findOne({ oauthID: profile.id }, function(err, user) {
+		if(err) {
+			console.log(err);  // handle errors!
+		}
+		if (!err && user !== null) {
+			done(null, user);
+		} else {
+			if (profile.emails) {
+				email_val = profile.emails[0].value;
+			} else {
+				console.log("Email field is empty @Twitter; user not authorising");
+				email_val = null;
+			}
+			user = new User({
+				oauthID: profile.id,
+				name: profile.displayName,
+				email: email_val,
+				src: 'twit',
+				photoURL: profile.photos[0].value,
+				created: Date.now()
+				//todo: hope to idenfiy the Oauth provider with the oauthID
+			});
+			user.save(function(err) {
+				if(err) {
+					console.log(err);  // handle errors!
+				} else {
+					console.log("saving user ...");
+					done(null, user);
+				}
+			});
+		}
+	});
+}
+));
+
+// Google
+passport.use(new GoogleStrategy({
+	clientID: config.google.clientID,
+	clientSecret: config.google.clientSecret,
+	callbackURL: config.google.callbackURL,
+	passReqToCallback: true
+},
+function(request, accessToken, refreshToken, profile, done) {
+	User.findOne({ oauthID: profile.id }, function(err, user) {
+		if(err) {
+			console.log(err);  // handle errors!
+		}
+		if (!err && user !== null) {
+			done(null, user);
+		} else {
+			user = new User({
+				oauthID: profile.id,
+				name: profile.displayName,
+				email: profile.email,
+				photoURL: profile.photos[0].value,
+				src: 'goog',
+				created: Date.now()
+				//todo: hope to idenfiy the Oauth provider with the oauthID
+			});
+			user.save(function(err) {
+				if(err) {
+					console.log(err);  // handle errors!
+				} else {
+					console.log("saving user ...");
+					done(null, user);
+				}
+			});
+		}
+	});
+}
+));
+
 
 passport.serializeUser(function(user, done) {
-	console.log("serialize");
-	console.log(user);
-  done(null, user.id);
+	done(null, user.id);
 });
 
 passport.deserializeUser(function(id, done) {
-	console.log("deserialize");
-	console.log(id);
-  User.getUserById(id, function(err, user) {
+	User.getUserById(id, function(err, user) {
 		if(!err) done(null, user);
 		else done(err, null);
-  });
+	});
 });
 
 router.post('/login',
-  passport.authenticate('local', {successRedirect:'/', failureRedirect:'/users/login',failureFlash: true}),
-  function(req, res) {
-    res.redirect('/');
-  });
+passport.authenticate('local', {successRedirect:'/', failureRedirect:'/users/login',failureFlash: true}),
+function(req, res) {
+	res.redirect('/');
+});
 
 router.get('/logout', function(req, res){
 	req.logout();
