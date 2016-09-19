@@ -136,7 +136,7 @@ passport.use(new LocalStrategy(
 			}
 			if (!err && user !== null) {
 				done(null, user);
-			} else {²
+			} else {
 				if (profile.emails) {
 					email_val = profile.emails[0].value;
 				} else {
